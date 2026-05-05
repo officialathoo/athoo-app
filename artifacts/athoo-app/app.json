@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "Athoo",
+    "slug": "athoo-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/logo.png",
+    "scheme": "athoo",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A6EE0"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "config": {
+        "googleMapsApiKey": "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao"
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "Athoo uses your camera to upload your profile photo and documents.",
+        "NSLocationWhenInUseUsageDescription": "Athoo uses your location to find nearby service providers and track jobs.",
+        "NSLocationAlwaysUsageDescription": "Athoo uses background location to track job progress in real time.",
+        "NSMicrophoneUsageDescription": "Athoo uses the microphone for in-app voice calls with providers.",
+        "NSFaceIDUsageDescription": "Athoo uses Face ID for quick, secure sign-in.",
+        "NSPhotoLibraryUsageDescription": "Athoo accesses your photo library to upload profile and document photos."
+      }
+    },
+    "androidStatusBar": {
+      "backgroundColor": "#00000000",
+      "translucent": true,
+      "barStyle": "dark-content"
+    },
+    "android": {
+      "targetSdkVersion": 34,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao"
+        }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/images/logo.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
