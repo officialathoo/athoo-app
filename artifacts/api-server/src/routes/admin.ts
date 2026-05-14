@@ -23,7 +23,7 @@ import {
   refundRequestsTable,
   hourlyRateRequestsTable,
 } from "@workspace/db/schema";
-import { and, between, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, between, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import {
   requireAdmin,
   requireAuth,
@@ -378,7 +378,7 @@ router.post("/providers/:id/commission-payment", async (req: AuthRequest, res) =
 
 router.get("/bookings", async (req, res) => {
   try {
-    const status =
+    const statusParam =
       typeof req.query.status === "string" && req.query.status.trim()
         ? req.query.status.trim()
         : undefined;
@@ -387,10 +387,18 @@ router.get("/bookings", async (req, res) => {
     const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
     const offset = (page - 1) * limit;
 
+    let statusFilter;
+    if (statusParam) {
+      const statuses = statusParam.split(",").map(s => s.trim()).filter(Boolean);
+      statusFilter = statuses.length === 1
+        ? eq(bookingsTable.status, statuses[0])
+        : inArray(bookingsTable.status, statuses);
+    }
+
     const bookings = await db
       .select()
       .from(bookingsTable)
-      .where(status ? eq(bookingsTable.status, status) : undefined)
+      .where(statusFilter)
       .orderBy(desc(bookingsTable.createdAt))
       .limit(limit)
       .offset(offset);
