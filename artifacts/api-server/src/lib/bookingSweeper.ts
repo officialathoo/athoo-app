@@ -57,7 +57,7 @@ async function sweepStuckAcceptedBookings(): Promise<number> {
     .from(bookingsTable)
     .where(
       and(
-        eq(bookingsTable.status, "accepted"),
+        sql`${bookingsTable.status} IN ('accepted', 'confirmed')`,
         isNull(bookingsTable.providerArrivedAt),
         lt(bookingsTable.createdAt, cutoff)
       )

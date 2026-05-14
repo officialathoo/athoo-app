@@ -9,7 +9,10 @@ const PAGE_SIZE = 25;
 const STATUS_OPTIONS = [
   { value: "all", label: "All Statuses" },
   { value: "pending", label: "Pending" },
+  { value: "confirmed", label: "Confirmed" },
   { value: "accepted", label: "Accepted" },
+  { value: "provider_travelling", label: "Provider Travelling" },
+  { value: "provider_arrived", label: "Provider Arrived" },
   { value: "in_progress", label: "In Progress" },
   { value: "completed", label: "Completed" },
   { value: "cancelled", label: "Cancelled" },
@@ -18,7 +21,8 @@ const STATUS_OPTIONS = [
 const STAT_CONFIG = [
   { label: "Total", key: "all", color: "text-slate-700", bg: "bg-slate-100" },
   { label: "Pending", key: "pending", color: "text-amber-700", bg: "bg-amber-100" },
-  { label: "In Progress", key: "in_progress", color: "text-blue-700", bg: "bg-blue-100" },
+  { label: "Confirmed", key: "confirmed", color: "text-blue-700", bg: "bg-blue-100" },
+  { label: "In Progress", key: "in_progress", color: "text-purple-700", bg: "bg-purple-100" },
   { label: "Completed", key: "completed", color: "text-emerald-700", bg: "bg-emerald-100" },
   { label: "Cancelled", key: "cancelled", color: "text-red-700", bg: "bg-red-100" },
 ];

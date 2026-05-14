@@ -40,7 +40,10 @@ function formatElapsed(startedAt?: string) {
 
 const STATUS_CONFIG = {
   pending: { label: "Pending", color: "#F59E0B", bg: "#FFFBEB", icon: "clock" },
+  confirmed: { label: "Confirmed", color: "#3B82F6", bg: "#EFF6FF", icon: "check-circle" },
   accepted: { label: "Accepted", color: "#3B82F6", bg: "#EFF6FF", icon: "check-circle" },
+  provider_travelling: { label: "Provider On The Way", color: "#6366F1", bg: "#EEF2FF", icon: "navigation" },
+  provider_arrived: { label: "Provider Arrived", color: "#0EA5E9", bg: "#F0F9FF", icon: "map-pin" },
   in_progress: { label: "In Progress", color: "#8B5CF6", bg: "#F5F3FF", icon: "tool" },
   completed: { label: "Completed", color: "#22C55E", bg: "#F0FDF4", icon: "check-square" },
   cancelled: { label: "Cancelled", color: "#EF4444", bg: "#FEF2F2", icon: "x-circle" },

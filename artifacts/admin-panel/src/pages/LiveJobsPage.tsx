@@ -21,7 +21,10 @@ type LiveBooking = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
+  confirmed: "bg-blue-100 text-blue-700 border-blue-200",
   accepted: "bg-blue-100 text-blue-700 border-blue-200",
+  provider_travelling: "bg-indigo-100 text-indigo-700 border-indigo-200",
+  provider_arrived: "bg-cyan-100 text-cyan-700 border-cyan-200",
   in_progress: "bg-purple-100 text-purple-700 border-purple-200",
   pending: "bg-amber-100 text-amber-700 border-amber-200",
 };
@@ -36,21 +39,23 @@ function elapsed(startedAt?: string) {
 }
 
 export function LiveJobsPage() {
-  const [statusFilter, setStatusFilter] = useState<"all" | "accepted" | "in_progress">("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
+  const liveStatuses = "confirmed,accepted,provider_travelling,provider_arrived,in_progress";
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["live-jobs"],
-    queryFn: () => api<{ bookings: LiveBooking[] }>("/api/admin/bookings?status=accepted,in_progress&limit=100"),
+    queryFn: () => api<{ bookings: LiveBooking[] }>(`/api/admin/bookings?status=${liveStatuses}&limit=100`),
     refetchInterval: 15000,
     staleTime: 10000,
   });
 
+  const liveStatusArr = liveStatuses.split(",");
   const bookings = (data?.bookings ?? []).filter(b =>
-    statusFilter === "all" ? ["accepted", "in_progress"].includes(b.status) : b.status === statusFilter
+    statusFilter === "all" ? liveStatusArr.includes(b.status) : b.status === statusFilter
   );
 
   const inProgress = (data?.bookings ?? []).filter(b => b.status === "in_progress").length;
-  const accepted = (data?.bookings ?? []).filter(b => b.status === "accepted").length;
+  const accepted = (data?.bookings ?? []).filter(b => ["accepted", "confirmed", "provider_travelling", "provider_arrived"].includes(b.status)).length;
 
   return (
     <div className="space-y-5">

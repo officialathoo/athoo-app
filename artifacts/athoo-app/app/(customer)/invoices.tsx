@@ -37,34 +37,48 @@ export default function InvoicesScreen() {
 
   const getInvoiceNo = (b: any) => `ATH-${b.id.slice(-6).toUpperCase()}`;
 
+  const getInvoiceBreakdown = (b: any) => {
+    const ratePerHour = Number(b.ratePerHour || 0);
+    const hours = Number(b.hours || 0);
+    const travelCharge = Number(b.travelCharge ?? b.visitCharge ?? 0);
+    const serviceCharge = (ratePerHour > 0 && hours > 0)
+      ? Math.round(ratePerHour * hours)
+      : Number(b.price || 0);
+    const total = serviceCharge + travelCharge;
+    const commissionAmount = Number(b.commissionAmount || 0);
+    const commissionRate = Number(b.commissionRate || 0);
+    const providerAmount = Number(b.providerAmount || 0) || (total - commissionAmount);
+    return { ratePerHour, hours, travelCharge, serviceCharge, total, commissionAmount, commissionRate, providerAmount };
+  };
+
   const handleShare = async (b: any) => {
     const invoiceNo = getInvoiceNo(b);
-    const serviceAmount = b.price || 0;
-    const visitCharge = (b as any).visitCharge ?? 200;
-    const total = serviceAmount + visitCharge;
-    const msg = [
+    const { ratePerHour, hours, serviceCharge, travelCharge, total } = getInvoiceBreakdown(b);
+    const lines = [
       `ATHOO Invoice — ${invoiceNo}`,
       `Service: ${b.service}`,
       `Provider: ${b.providerName}`,
       `Date: ${formatDate(b.createdAt)}`,
       ``,
-      `Service Amount: Rs. ${serviceAmount.toLocaleString()}`,
-      `Visit Charge: Rs. ${visitCharge.toLocaleString()}`,
-      `Total: Rs. ${total.toLocaleString()}`,
-      `Status: PAID`,
-      ``,
-      `ATHOO — Pakistan's Home Services Platform`,
-    ].join("\n");
+    ];
+    if (ratePerHour > 0 && hours > 0) {
+      lines.push(`Per Hour Rate: Rs. ${ratePerHour.toLocaleString()}`);
+      lines.push(`Hours: ${hours}`);
+    }
+    lines.push(`Service Charge: Rs. ${serviceCharge.toLocaleString()}`);
+    if (travelCharge > 0) {
+      lines.push(`Travelling Charge: Rs. ${travelCharge.toLocaleString()}`);
+    }
+    lines.push(`Total: Rs. ${total.toLocaleString()}`);
+    lines.push(`Status: PAID`, ``, `ATHOO — Pakistan's Home Services Platform`);
     try {
-      await Share.share({ message: msg, title: `Invoice ${invoiceNo}` });
+      await Share.share({ message: lines.join("\n"), title: `Invoice ${invoiceNo}` });
     } catch { /* user cancelled */ }
   };
 
   if (selected) {
-    const serviceAmount = selected.price || 0;
-    const visitCharge = (selected as any).visitCharge ?? 200;
-    const subtotal = serviceAmount + visitCharge;
-    const tax = Math.round(subtotal * 0);
+    const { ratePerHour, hours, serviceCharge, travelCharge, total: subtotal, commissionAmount, commissionRate, providerAmount } = getInvoiceBreakdown(selected);
+    const tax = 0;
 
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
@@ -114,21 +128,34 @@ export default function InvoicesScreen() {
                 <Text style={[styles.tableHeaderText, { textAlign: "right" }]}>Amount</Text>
               </View>
 
-              <View style={styles.tableRow}>
-                <View style={{ flex: 2 }}>
-                  <Text style={styles.tableRowLabel}>{selected.service}</Text>
-                  <Text style={styles.tableRowSub}>{selected.scheduledDate} · {selected.scheduledTime}</Text>
+              {ratePerHour > 0 && hours > 0 ? (
+                <View style={styles.tableRow}>
+                  <View style={{ flex: 2 }}>
+                    <Text style={styles.tableRowLabel}>{selected.service}</Text>
+                    <Text style={styles.tableRowSub}>Rs. {ratePerHour.toLocaleString()}/hr × {hours} hrs</Text>
+                    <Text style={styles.tableRowSub}>{selected.scheduledDate} · {selected.scheduledTime}</Text>
+                  </View>
+                  <Text style={styles.tableRowAmount}>Rs. {serviceCharge.toLocaleString()}</Text>
                 </View>
-                <Text style={styles.tableRowAmount}>Rs. {serviceAmount.toLocaleString()}</Text>
-              </View>
+              ) : (
+                <View style={styles.tableRow}>
+                  <View style={{ flex: 2 }}>
+                    <Text style={styles.tableRowLabel}>{selected.service}</Text>
+                    <Text style={styles.tableRowSub}>{selected.scheduledDate} · {selected.scheduledTime}</Text>
+                  </View>
+                  <Text style={styles.tableRowAmount}>Rs. {serviceCharge.toLocaleString()}</Text>
+                </View>
+              )}
 
-              <View style={styles.tableRow}>
-                <View style={{ flex: 2 }}>
-                  <Text style={styles.tableRowLabel}>Visit / Call-out Charge</Text>
-                  <Text style={styles.tableRowSub}>Fixed visit fee</Text>
+              {travelCharge > 0 && (
+                <View style={styles.tableRow}>
+                  <View style={{ flex: 2 }}>
+                    <Text style={styles.tableRowLabel}>Travelling / Visit Charge</Text>
+                    <Text style={styles.tableRowSub}>Agreed travelling fee</Text>
+                  </View>
+                  <Text style={styles.tableRowAmount}>Rs. {travelCharge.toLocaleString()}</Text>
                 </View>
-                <Text style={styles.tableRowAmount}>Rs. {visitCharge.toLocaleString()}</Text>
-              </View>
+              )}
 
               <View style={styles.tableDivider} />
 
@@ -137,10 +164,12 @@ export default function InvoicesScreen() {
                 <Text style={styles.tableRowAmount}>Rs. {subtotal.toLocaleString()}</Text>
               </View>
 
-              <View style={styles.tableRow}>
-                <Text style={[styles.tableRowLabel, { flex: 2, color: Colors.textSecondary }]}>Tax (0%)</Text>
-                <Text style={[styles.tableRowAmount, { color: Colors.textSecondary }]}>Rs. 0</Text>
-              </View>
+              {commissionAmount > 0 && (
+                <View style={styles.tableRow}>
+                  <Text style={[styles.tableRowLabel, { flex: 2, color: Colors.textSecondary }]}>Platform Commission ({commissionRate}%)</Text>
+                  <Text style={[styles.tableRowAmount, { color: Colors.textSecondary }]}>Rs. {commissionAmount.toLocaleString()}</Text>
+                </View>
+              )}
 
               <LinearGradient colors={[Colors.primary, "#0D4BA0"]} style={styles.totalRow}>
                 <Text style={styles.totalLabel}>TOTAL PAID</Text>

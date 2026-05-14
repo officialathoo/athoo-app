@@ -254,6 +254,15 @@ export const bookingsTable = pgTable("bookings", {
   scheduledTime: text("scheduled_time").notNull(),
   status: text("status").notNull().default("pending"),
   price: integer("price"),
+  // Negotiation pricing fields — final agreed terms used for invoicing
+  ratePerHour: integer("rate_per_hour"),
+  hours: real("hours"),
+  travelCharge: integer("travel_charge"),
+  // Source of booking — direct, broadcast, or negotiation
+  source: text("source").default("direct"),
+  // Reference IDs for tracing back to the original broadcast/negotiation
+  broadcastRequestId: text("broadcast_request_id"),
+  broadcastResponseId: text("broadcast_response_id"),
   commissionAmount: integer("commission_amount").default(0),
   providerAmount: integer("provider_amount").default(0),
   commissionRate: integer("commission_rate").default(0),
@@ -621,6 +630,10 @@ export const broadcastRequestsTable = pgTable("broadcast_requests", {
   scheduledTime: text("scheduled_time").notNull(),
   // Customer's opening offer; null = "name your price"
   customerOffer: integer("customer_offer"),
+  // Detailed pricing from customer
+  customerRatePerHour: integer("customer_rate_per_hour"),
+  customerHours: real("customer_hours"),
+  customerTravelCharge: integer("customer_travel_charge"),
   // open | accepted | cancelled | expired
   status: text("status").notNull().default("open"),
   // Which broadcastResponsesTable.id the customer chose
@@ -644,8 +657,14 @@ export const broadcastResponsesTable = pgTable("broadcast_responses", {
   providerName: text("provider_name").notNull(),
   // null = provider accepts customer's offered price; set = provider counter
   providerOffer: integer("provider_offer"),
+  // Detailed pricing from provider
+  providerRatePerHour: integer("provider_rate_per_hour"),
+  providerHours: real("provider_hours"),
+  providerTravelCharge: integer("provider_travel_charge"),
+  // Whether provider accepted customer's price directly (no counter)
+  isDirectAccept: boolean("is_direct_accept").default(false),
   message: text("message"),
-  // pending | accepted_by_customer | rejected_by_customer | withdrawn
+  // pending | accepted_by_customer | rejected_by_customer | withdrawn | not_selected
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

@@ -312,7 +312,7 @@ export default function JobDetailScreen() {
   }, [booking?.status, booking?.jobStartedAt]);
 
   const shouldTrackLive =
-    booking?.status === "accepted" || booking?.status === "in_progress";
+    booking?.status === "accepted" || booking?.status === "confirmed" || booking?.status === "provider_travelling" || booking?.status === "provider_arrived" || booking?.status === "in_progress";
 
   const syncProviderLocationToBackend = async (
     currentBookingId: string,
@@ -776,7 +776,10 @@ export default function JobDetailScreen() {
 
   const STATUS_CONFIG = {
     pending: { label: "Pending", color: "#F59E0B", bg: "#FFFBEB" },
+    confirmed: { label: "Confirmed", color: "#3B82F6", bg: "#EFF6FF" },
     accepted: { label: "Accepted", color: "#3B82F6", bg: "#EFF6FF" },
+    provider_travelling: { label: "On The Way", color: "#6366F1", bg: "#EEF2FF" },
+    provider_arrived: { label: "Arrived", color: "#0EA5E9", bg: "#F0F9FF" },
     in_progress: { label: "In Progress", color: "#8B5CF6", bg: "#F5F3FF" },
     completed: { label: "Completed", color: "#22C55E", bg: "#F0FDF4" },
     cancelled: { label: "Cancelled", color: "#EF4444", bg: "#FEF2F2" },
@@ -786,14 +789,14 @@ export default function JobDetailScreen() {
     STATUS_CONFIG[booking.status as keyof typeof STATUS_CONFIG] ||
     STATUS_CONFIG.pending;
 
-  const VISIT_CHARGE = (booking as any).visitCharge ?? 200;
-  const hourlyRate = booking.price ? Math.round(booking.price) : 500;
-  const jobStarted = booking.jobStartedAt ? new Date(booking.jobStartedAt) : null;
-  const elapsedMinutes = jobStarted
-    ? Math.ceil((Date.now() - jobStarted.getTime()) / 60000)
-    : 0;
-  const timeCharge = Math.round((elapsedMinutes / 60) * hourlyRate);
-  const totalAmount = VISIT_CHARGE + timeCharge;
+  // Use final agreed pricing terms from booking
+  const ratePerHour = Number((booking as any).ratePerHour || 0);
+  const bookingHours = Number((booking as any).hours || 0);
+  const travelCharge = Number((booking as any).travelCharge ?? (booking as any).visitCharge ?? 0);
+  const serviceCharge = (ratePerHour > 0 && bookingHours > 0)
+    ? Math.round(ratePerHour * bookingHours)
+    : Number(booking.price || 0);
+  const totalAmount = serviceCharge + travelCharge;
   const hasLocation = !!getBookingLatLng(booking) || !!booking.address?.trim();
 
   return (
@@ -1035,22 +1038,25 @@ export default function JobDetailScreen() {
 
               <View style={styles.billingRow}>
                 <View style={styles.billingItem}>
-                  <Text style={styles.billingLabel}>Visit</Text>
+                  <Text style={styles.billingLabel}>Service</Text>
                   <Text
-                    style={[styles.billingVal, { color: Colors.secondary }]}
+                    style={[styles.billingVal, { color: Colors.primary }]}
                   >
-                    Rs. {VISIT_CHARGE}
+                    Rs. {serviceCharge}
                   </Text>
                 </View>
 
-                <View style={styles.billingDivider} />
-
-                <View style={styles.billingItem}>
-                  <Text style={styles.billingLabel}>Time ({elapsedMinutes}m)</Text>
-                  <Text style={[styles.billingVal, { color: Colors.primary }]}>
-                    Rs. {timeCharge}
-                  </Text>
-                </View>
+                {travelCharge > 0 && (
+                  <>
+                    <View style={styles.billingDivider} />
+                    <View style={styles.billingItem}>
+                      <Text style={styles.billingLabel}>Travel</Text>
+                      <Text style={[styles.billingVal, { color: Colors.secondary }]}>
+                        Rs. {travelCharge}
+                      </Text>
+                    </View>
+                  </>
+                )}
 
                 <View style={styles.billingDivider} />
 
@@ -1084,18 +1090,35 @@ export default function JobDetailScreen() {
             </View>
           ) : null}
 
-          {booking.status === "accepted" ? (
+          {(booking.status === "accepted" || booking.status === "confirmed") ? (
             <View style={styles.arrivedSection}>
               <View style={styles.otpInfo}>
-                <Icon name="shield" size={16} color={Colors.primary} />
+                <Icon name="navigation" size={16} color={Colors.primary} />
                 <Text style={styles.otpInfoText}>
-                  Ask the customer for their 4-digit start code, then enter it to
-                  begin the job.
+                  Booking confirmed. Start travelling to the customer location, then enter the start code when you arrive.
                 </Text>
               </View>
 
               <Button
                 title={isAccepting ? "Please wait..." : "I've Arrived – Enter Start Code"}
+                onPress={handleArrived}
+                disabled={isAccepting}
+                fullWidth
+              />
+            </View>
+          ) : null}
+
+          {(booking.status === "provider_travelling" || booking.status === "provider_arrived") ? (
+            <View style={styles.arrivedSection}>
+              <View style={styles.otpInfo}>
+                <Icon name="shield" size={16} color={Colors.primary} />
+                <Text style={styles.otpInfoText}>
+                  Ask the customer for their 4-digit start code, then enter it to begin the job.
+                </Text>
+              </View>
+
+              <Button
+                title={isAccepting ? "Please wait..." : "Enter Start Code"}
                 onPress={handleArrived}
                 disabled={isAccepting}
                 fullWidth
@@ -1135,15 +1158,17 @@ export default function JobDetailScreen() {
               <View style={styles.invoiceSummaryRow}>
                 <View style={styles.invoiceSummaryItem}>
                   <Text style={styles.invoiceSummaryLabel}>Service Charge</Text>
-                  <Text style={styles.invoiceSummaryValue}>Rs. {(booking.price || 0).toLocaleString()}</Text>
+                  <Text style={styles.invoiceSummaryValue}>Rs. {serviceCharge.toLocaleString()}</Text>
                 </View>
-                <View style={styles.invoiceSummaryItem}>
-                  <Text style={styles.invoiceSummaryLabel}>Visit Charge</Text>
-                  <Text style={styles.invoiceSummaryValue}>Rs. {VISIT_CHARGE}</Text>
-                </View>
+                {travelCharge > 0 && (
+                  <View style={styles.invoiceSummaryItem}>
+                    <Text style={styles.invoiceSummaryLabel}>Travelling Charge</Text>
+                    <Text style={styles.invoiceSummaryValue}>Rs. {travelCharge.toLocaleString()}</Text>
+                  </View>
+                )}
                 <View style={[styles.invoiceSummaryItem, styles.invoiceTotalItem]}>
                   <Text style={styles.invoiceTotalLabel}>Total to Collect</Text>
-                  <Text style={styles.invoiceTotalValue}>Rs. {((booking.price || 0) + VISIT_CHARGE).toLocaleString()}</Text>
+                  <Text style={styles.invoiceTotalValue}>Rs. {totalAmount.toLocaleString()}</Text>
                 </View>
               </View>
 
@@ -1207,28 +1232,42 @@ export default function JobDetailScreen() {
                   <Text style={styles.invoiceModalLabel}>Scheduled</Text>
                   <Text style={styles.invoiceModalValue}>{booking?.scheduledDate} at {booking?.scheduledTime}</Text>
                 </View>
-                <View style={[styles.invoiceModalRow, { marginTop: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 8 }]}>
+                {ratePerHour > 0 && bookingHours > 0 && (
+                  <>
+                    <View style={[styles.invoiceModalRow, { marginTop: 4, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 8 }]}>
+                      <Text style={styles.invoiceModalLabel}>Per Hour Rate</Text>
+                      <Text style={styles.invoiceModalValue}>Rs. {ratePerHour.toLocaleString()}</Text>
+                    </View>
+                    <View style={styles.invoiceModalRow}>
+                      <Text style={styles.invoiceModalLabel}>Hours</Text>
+                      <Text style={styles.invoiceModalValue}>{bookingHours}</Text>
+                    </View>
+                  </>
+                )}
+                <View style={[styles.invoiceModalRow, { marginTop: ratePerHour > 0 ? 0 : 4, borderTopWidth: ratePerHour > 0 ? 0 : 1, borderTopColor: Colors.border, paddingTop: ratePerHour > 0 ? 0 : 8 }]}>
                   <Text style={styles.invoiceModalLabel}>Service Charge</Text>
-                  <Text style={styles.invoiceModalValue}>Rs. {(booking?.price || 0).toLocaleString()}</Text>
+                  <Text style={styles.invoiceModalValue}>Rs. {serviceCharge.toLocaleString()}</Text>
                 </View>
-                <View style={styles.invoiceModalRow}>
-                  <Text style={styles.invoiceModalLabel}>Visit Charge</Text>
-                  <Text style={styles.invoiceModalValue}>Rs. {VISIT_CHARGE}</Text>
-                </View>
+                {travelCharge > 0 && (
+                  <View style={styles.invoiceModalRow}>
+                    <Text style={styles.invoiceModalLabel}>Travelling Charge</Text>
+                    <Text style={styles.invoiceModalValue}>Rs. {travelCharge.toLocaleString()}</Text>
+                  </View>
+                )}
                 <View style={[styles.invoiceModalRow, { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 8, marginTop: 4 }]}>
                   <Text style={[styles.invoiceModalLabel, { fontWeight: "800", fontSize: 15 }]}>Total Amount</Text>
                   <Text style={[styles.invoiceModalValue, { fontWeight: "900", fontSize: 17, color: Colors.primary }]}>
-                    Rs. {((booking?.price || 0) + VISIT_CHARGE).toLocaleString()}
+                    Rs. {totalAmount.toLocaleString()}
                   </Text>
                 </View>
                 <View style={styles.invoiceModalRow}>
-                  <Text style={styles.invoiceModalLabel}>Platform Commission</Text>
-                  <Text style={[styles.invoiceModalValue, { color: "#EF4444" }]}>- Rs. {booking?.commissionAmount || 0}</Text>
+                  <Text style={styles.invoiceModalLabel}>Platform Commission ({booking?.commissionRate || 0}%)</Text>
+                  <Text style={[styles.invoiceModalValue, { color: "#EF4444" }]}>- Rs. {(booking?.commissionAmount || 0).toLocaleString()}</Text>
                 </View>
                 <View style={styles.invoiceModalRow}>
                   <Text style={[styles.invoiceModalLabel, { fontWeight: "700" }]}>Your Earnings</Text>
                   <Text style={[styles.invoiceModalValue, { fontWeight: "800", color: "#16A34A" }]}>
-                    Rs. {((booking?.price || 0) + VISIT_CHARGE - (booking?.commissionAmount || 0)).toLocaleString()}
+                    Rs. {(booking?.providerAmount || (totalAmount - (booking?.commissionAmount || 0))).toLocaleString()}
                   </Text>
                 </View>
               </View>
