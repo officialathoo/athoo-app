@@ -669,7 +669,7 @@ router.post("/:id/arrived", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
-    await db.update(bookingsTable).set({ providerArrivedAt: new Date(), updatedAt: new Date() }).where(eq(bookingsTable.id, req.params.id as string));
+    await db.update(bookingsTable).set({ status: "provider_arrived", providerArrivedAt: new Date(), updatedAt: new Date() }).where(eq(bookingsTable.id, req.params.id as string));
     const updated = await db.query.bookingsTable.findFirst({ where: eq(bookingsTable.id, req.params.id as string) });
 
     if (updated) {
