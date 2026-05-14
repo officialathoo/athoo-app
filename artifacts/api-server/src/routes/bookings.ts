@@ -22,7 +22,7 @@ function broadcastBookingUpdate(
 
 const router = Router();
 
-type AllowedStatus = "pending" | "accepted" | "in_progress" | "completed" | "cancelled";
+type AllowedStatus = "pending" | "confirmed" | "accepted" | "provider_travelling" | "provider_arrived" | "in_progress" | "completed" | "cancelled";
 
 // Job OTP (PIN) lifetime — 3 minutes per spec.
 const PIN_TTL_MS = 3 * 60 * 1000;
@@ -41,8 +41,11 @@ function isPinExpired(expiresAt: Date | null | undefined): boolean {
 // by the providerArrivedAt timestamp on top of the `accepted` status, so it is
 // not its own row in this map.
 const STATE_TRANSITIONS: Record<AllowedStatus, AllowedStatus[]> = {
-  pending: ["accepted", "cancelled"],
-  accepted: ["in_progress", "cancelled"],
+  pending: ["accepted", "confirmed", "cancelled"],
+  confirmed: ["provider_travelling", "in_progress", "cancelled"],
+  accepted: ["provider_travelling", "in_progress", "cancelled"],
+  provider_travelling: ["provider_arrived", "in_progress", "cancelled"],
+  provider_arrived: ["in_progress", "cancelled"],
   in_progress: ["completed"],
   completed: [],
   cancelled: [],
@@ -81,7 +84,7 @@ function toNumber(value: unknown): number | null {
 }
 
 function isAllowedStatus(value: unknown): value is AllowedStatus {
-  return ["pending", "accepted", "in_progress", "completed", "cancelled"].includes(String(value));
+  return ["pending", "confirmed", "accepted", "provider_travelling", "provider_arrived", "in_progress", "completed", "cancelled"].includes(String(value));
 }
 
 async function getBookingOr404(id: string, res: Response) {
@@ -151,10 +154,24 @@ async function applyCompletionCommission(bookingId: string) {
   }
 
   const settings = await getPlatformSettings();
-  const price = Number(booking.price || 0);
+  // Calculate service charge from final agreed terms:
+  // If ratePerHour and hours are set, use ratePerHour × hours
+  // Otherwise fall back to the flat price field
+  const ratePerHour = Number(booking.ratePerHour || 0);
+  const hours = Number(booking.hours || 0);
+  const serviceCharge = (ratePerHour > 0 && hours > 0)
+    ? Math.round(ratePerHour * hours)
+    : Number(booking.price || 0);
+  const travelCharge = Number(booking.travelCharge || 0);
+  // Total customer payable = service charge + travel charge
+  const customerTotal = serviceCharge + travelCharge;
+  // Commission is calculated on the service charge only (not travel charge)
   const commissionRate = Number(settings.commissionRate || 0);
-  const commissionAmount = Math.max(0, Math.round((price * commissionRate) / 100));
-  const providerAmount = Math.max(0, price - commissionAmount);
+  const commissionAmount = Math.max(0, Math.round((serviceCharge * commissionRate) / 100));
+  // Provider earning = customer total - platform commission
+  const providerAmount = Math.max(0, customerTotal - commissionAmount);
+  // Update price to reflect the total customer payable if it wasn't set correctly
+  const price = customerTotal;
 
   // Wrap in a DB transaction to prevent race conditions when multiple bookings
   // complete simultaneously for the same provider (prevents double-counting commission).
@@ -168,6 +185,7 @@ async function applyCompletionCommission(bookingId: string) {
     const shouldBlock = nextPending >= commissionLimit;
 
     await tx.update(bookingsTable).set({
+      price,
       commissionRate,
       commissionAmount,
       providerAmount,
@@ -272,6 +290,9 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       scheduledDate,
       scheduledTime,
       price,
+      ratePerHour,
+      hours,
+      travelCharge,
       pickedLat,
       pickedLng,
       customerLat,
@@ -365,8 +386,16 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     if (visitCharge === 0) visitCharge = settings.defaultVisitCharge;
 
     const parsedPrice = toNumber(price);
+    const parsedRatePerHour = toNumber(ratePerHour);
+    const parsedHours = toNumber(hours);
+    const parsedTravelCharge = toNumber(travelCharge);
     const parsedCustomerLat = toNumber(customerLat) ?? parsedPickedLat;
     const parsedCustomerLng = toNumber(customerLng) ?? parsedPickedLng;
+
+    // If detailed pricing is provided, compute price from it
+    const computedPrice = (parsedRatePerHour && parsedHours)
+      ? Math.round(parsedRatePerHour * parsedHours) + (parsedTravelCharge || visitCharge)
+      : parsedPrice;
 
     const booking = {
       id: generateId(),
@@ -385,11 +414,15 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       scheduledDate: String(scheduledDate),
       scheduledTime: String(scheduledTime),
       status: "pending",
-      price: parsedPrice,
+      price: computedPrice,
+      ratePerHour: parsedRatePerHour,
+      hours: parsedHours,
+      travelCharge: parsedTravelCharge ?? visitCharge,
+      source: "direct",
       commissionAmount: 0,
-      providerAmount: parsedPrice,
+      providerAmount: computedPrice,
       commissionRate: 0,
-      visitCharge,
+      visitCharge: parsedTravelCharge ?? visitCharge,
       categorySlug: categorySlug || null,
       pickedLat: parsedPickedLat,
       pickedLng: parsedPickedLng,
@@ -448,7 +481,7 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
-    if (status === "accepted") {
+    if (status === "accepted" || status === "provider_travelling") {
       if (role !== "provider" || !isProviderOwner) {
         res.status(403).json({ error: "Only the assigned provider can accept this booking" });
         return;
@@ -495,7 +528,7 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
     const updates: Record<string, unknown> = { status, updatedAt: new Date() };
     const parsedPrice = toNumber(price);
     if (parsedPrice !== null) updates.price = parsedPrice;
-    if (status === "accepted") {
+    if (status === "accepted" || status === "confirmed") {
       updates.startPin = existing.startPin || generatePin();
       if (!existing.startPinExpiresAt || isPinExpired(existing.startPinExpiresAt)) {
         updates.startPinExpiresAt = pinExpiry();
@@ -518,11 +551,29 @@ router.patch("/:id/status", requireAuth, async (req: AuthRequest, res: Response)
         status === "cancelled" ? "booking:cancelled" : "booking:status";
       broadcastBookingUpdate(updated, eventName, { status });
 
-      if (status === "accepted") {
+      if (status === "accepted" || status === "confirmed") {
         notifyUser({
           userId: updated.customerId,
-          title: "Booking accepted",
+          title: "Booking confirmed",
           body: `${updated.providerName} accepted your ${updated.service} booking`,
+          type: "booking",
+          link: `/bookings/${updated.id}`,
+          data: { bookingId: updated.id },
+        }).catch(() => undefined);
+      } else if (status === "provider_travelling") {
+        notifyUser({
+          userId: updated.customerId,
+          title: "Provider on the way",
+          body: `${updated.providerName} is heading to your location for ${updated.service}`,
+          type: "booking",
+          link: `/bookings/${updated.id}`,
+          data: { bookingId: updated.id },
+        }).catch(() => undefined);
+      } else if (status === "provider_arrived") {
+        notifyUser({
+          userId: updated.customerId,
+          title: "Provider has arrived",
+          body: `${updated.providerName} has arrived for your ${updated.service} booking`,
           type: "booking",
           link: `/bookings/${updated.id}`,
           data: { bookingId: updated.id },
@@ -613,12 +664,12 @@ router.post("/:id/arrived", requireAuth, async (req: AuthRequest, res: Response)
       res.status(403).json({ error: "Only the assigned provider can mark arrival" });
       return;
     }
-    if (!["accepted", "in_progress"].includes(String(booking.status))) {
-      res.status(400).json({ error: "Only accepted or in-progress bookings can be marked arrived" });
+    if (!["accepted", "confirmed", "provider_travelling", "in_progress"].includes(String(booking.status))) {
+      res.status(400).json({ error: "Only accepted/confirmed or in-progress bookings can be marked arrived" });
       return;
     }
 
-    await db.update(bookingsTable).set({ providerArrivedAt: new Date(), updatedAt: new Date() }).where(eq(bookingsTable.id, req.params.id as string));
+    await db.update(bookingsTable).set({ status: "provider_arrived", providerArrivedAt: new Date(), updatedAt: new Date() }).where(eq(bookingsTable.id, req.params.id as string));
     const updated = await db.query.bookingsTable.findFirst({ where: eq(bookingsTable.id, req.params.id as string) });
 
     if (updated) {
@@ -651,8 +702,8 @@ router.post("/:id/generate-start-pin", requireAuth, async (req: AuthRequest, res
       res.status(403).json({ error: "Only the assigned provider can prepare a start PIN" });
       return;
     }
-    if (booking.status !== "accepted") {
-      res.status(400).json({ error: "Start PIN can only be prepared for accepted bookings" });
+    if (!["accepted", "confirmed", "provider_travelling", "provider_arrived"].includes(String(booking.status))) {
+      res.status(400).json({ error: "Start PIN can only be prepared for accepted/confirmed bookings" });
       return;
     }
 
@@ -692,8 +743,8 @@ router.post("/:id/verify-start-pin", requireAuth, async (req: AuthRequest, res: 
       res.status(403).json({ error: "Only the assigned provider can verify the start PIN" });
       return;
     }
-    if (booking.status !== "accepted") {
-      res.status(400).json({ error: "Only accepted bookings can be started" });
+    if (!["accepted", "confirmed", "provider_travelling", "provider_arrived"].includes(String(booking.status))) {
+      res.status(400).json({ error: "Only accepted/confirmed bookings can be started" });
       return;
     }
     if (!booking.startPin) {

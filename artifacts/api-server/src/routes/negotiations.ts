@@ -2,13 +2,14 @@ import crypto from "crypto";
 import { logger } from "../lib/logger";
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { negotiationsTable, usersTable } from "@workspace/db/schema";
+import { negotiationsTable, usersTable, bookingsTable } from "@workspace/db/schema";
 import { and, eq, or } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../middlewares/auth";
 import type { NegotiationMessage } from "@workspace/db/schema";
 import { Response } from "express";
-import { emitToUser } from "../lib/eventBus";
+import { emitToUser, emitToRole, type EventName } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
+import { getPlatformSettings } from "../lib/admin";
 
 const router = Router();
 
@@ -375,7 +376,7 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
       senderId: userId,
       senderName: isProvider ? neg.providerName : neg.customerName,
       text,
-      offerAmount: finalPrice,
+      offerAmount: finalPrice ?? undefined,
       timestamp: new Date().toISOString(),
     });
 
@@ -392,21 +393,71 @@ router.patch("/:id/accept", requireAuth, async (req: AuthRequest, res: Response)
     const updated = await db.query.negotiationsTable.findFirst({
       where: eq(negotiationsTable.id, String(req.params.id)),
     });
+
+    // Create a confirmed booking from the accepted negotiation —
+    // The accepting party agrees to the other's latest terms, so no
+    // additional acceptance step is needed.
+    let booking: Record<string, unknown> | null = null;
+    if (updated && finalPrice) {
+      try {
+        const customer = await db.query.usersTable.findFirst({ where: eq(usersTable.id, updated.customerId) });
+        const provider = await db.query.usersTable.findFirst({ where: eq(usersTable.id, updated.providerId) });
+        if (customer && provider) {
+          const { address, scheduledDate, scheduledTime, service: bookingService } = req.body;
+          const bookingId = generateId();
+          const now = new Date();
+          const bookingRecord = {
+            id: bookingId,
+            publicId: `ATH-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.floor(10000 + Math.random() * 90000)}`,
+            customerId: updated.customerId,
+            customerName: customer.name,
+            customerPhone: customer.phone,
+            providerId: updated.providerId,
+            providerName: provider.name,
+            providerPhone: provider.phone,
+            service: bookingService || updated.service,
+            serviceIcon: "tool",
+            description: null,
+            attachment: null,
+            address: address || customer.address || "—",
+            scheduledDate: scheduledDate || now.toISOString().split("T")[0],
+            scheduledTime: scheduledTime || now.toTimeString().slice(0, 5),
+            status: "confirmed",
+            price: finalPrice,
+            source: "negotiation",
+            commissionAmount: 0,
+            providerAmount: finalPrice,
+            commissionRate: 0,
+            visitCharge: 0,
+          };
+          await db.insert(bookingsTable).values(bookingRecord);
+          booking = bookingRecord;
+
+          // Notify both parties about the confirmed booking
+          emitToUser(updated.customerId, "booking:new" as EventName, { booking: bookingRecord });
+          emitToUser(updated.providerId, "booking:new" as EventName, { booking: bookingRecord });
+          emitToRole("admin", "admin:event" as EventName, { type: "booking:new", booking: bookingRecord });
+        }
+      } catch (bookingErr) {
+        logger.error({ err: bookingErr }, "Failed to create booking from negotiation acceptance");
+      }
+    }
+
     if (updated) {
-      emitToUser(updated.customerId, "negotiation:accepted", { negotiation: updated });
-      emitToUser(updated.providerId, "negotiation:accepted", { negotiation: updated });
+      emitToUser(updated.customerId, "negotiation:accepted", { negotiation: updated, booking });
+      emitToUser(updated.providerId, "negotiation:accepted", { negotiation: updated, booking });
       const recipientId = isProvider ? updated.customerId : updated.providerId;
       const actor = isProvider ? updated.providerName : updated.customerName;
       notifyUser({
         userId: recipientId,
-        title: "Offer accepted",
-        body: `${actor} accepted Rs. ${finalPrice}`,
-        type: "negotiation",
-        link: `/negotiations/${updated.id}`,
-        data: { negotiationId: updated.id },
+        title: "Booking confirmed!",
+        body: `${actor} accepted Rs. ${finalPrice} — booking confirmed`,
+        type: "booking",
+        link: booking ? `/bookings/${(booking as any).id}` : `/negotiations/${updated.id}`,
+        data: booking ? { bookingId: (booking as any).id } : { negotiationId: updated.id },
       }).catch(() => undefined);
     }
-    res.json({ negotiation: updated });
+    res.json({ negotiation: updated, booking });
   } catch (e) {
     logger.error({ err: e }, "negotiation accept error");
     res.status(500).json({ error: "Failed to accept offer" });

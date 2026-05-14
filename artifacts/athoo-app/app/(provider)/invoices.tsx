@@ -16,20 +16,35 @@ export default function ProviderInvoicesScreen() {
 
   const completed = user ? getMyBookings(user.id, "provider").filter((b) => b.status === "completed") : [];
 
-  const invoices = completed.map((b) => ({
-    id: b.id,
-    service: b.service,
-    customer: b.customerName,
-    date: b.scheduledDate
-      ? new Date(b.scheduledDate).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })
-      : b.createdAt
-        ? new Date(b.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })
-        : "—",
-    serviceCharge: Number(b.providerAmount ?? b.price ?? 0),
-    visitCharge: Number((b as any).visitCharge ?? 0),
-    providerAmount: Number(b.providerAmount ?? b.price ?? 0),
-    invoiceNo: `ATH-${b.id.slice(-6).toUpperCase()}`,
-  }));
+  const invoices = completed.map((b) => {
+    const ratePerHour = Number((b as any).ratePerHour || 0);
+    const hours = Number((b as any).hours || 0);
+    const travelCharge = Number((b as any).travelCharge ?? (b as any).visitCharge ?? 0);
+    const serviceCharge = (ratePerHour > 0 && hours > 0)
+      ? Math.round(ratePerHour * hours)
+      : Number(b.price || 0);
+    const commissionAmount = Number(b.commissionAmount || 0);
+    const providerAmount = Number(b.providerAmount || 0) || (serviceCharge + travelCharge - commissionAmount);
+    return {
+      id: b.id,
+      service: b.service,
+      customer: b.customerName,
+      date: b.scheduledDate
+        ? new Date(b.scheduledDate).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })
+        : b.createdAt
+          ? new Date(b.createdAt).toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })
+          : "—",
+      ratePerHour,
+      hours,
+      serviceCharge,
+      travelCharge,
+      commissionAmount,
+      commissionRate: Number((b as any).commissionRate || 0),
+      providerAmount,
+      visitCharge: travelCharge,
+      invoiceNo: `ATH-${b.id.slice(-6).toUpperCase()}`,
+    };
+  });
 
   const selected = selectedId ? invoices.find((i) => i.id === selectedId) : null;
 
@@ -54,7 +69,7 @@ export default function ProviderInvoicesScreen() {
   };
 
   if (selected) {
-    const total = selected.serviceCharge + selected.visitCharge;
+    const customerTotal = selected.serviceCharge + selected.travelCharge;
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.header}>
@@ -78,23 +93,37 @@ export default function ProviderInvoicesScreen() {
             <View style={styles.invRow}><Text style={styles.invLabel}>Service</Text><Text style={styles.invVal}>{selected.service}</Text></View>
             <View style={styles.invRow}><Text style={styles.invLabel}>Customer</Text><Text style={styles.invVal}>{selected.customer}</Text></View>
             <View style={styles.invDivider} />
-            <View style={styles.invRow}><Text style={styles.invLabel}>Provider Amount</Text><Text style={styles.invVal}>Rs. {selected.serviceCharge.toLocaleString()}</Text></View>
-            {selected.visitCharge > 0 && (
+            {selected.ratePerHour > 0 && selected.hours > 0 && (
+              <>
+                <View style={styles.invRow}><Text style={styles.invLabel}>Per Hour Rate</Text><Text style={styles.invVal}>Rs. {selected.ratePerHour.toLocaleString()}</Text></View>
+                <View style={styles.invRow}><Text style={styles.invLabel}>Hours</Text><Text style={styles.invVal}>{selected.hours}</Text></View>
+              </>
+            )}
+            <View style={styles.invRow}><Text style={styles.invLabel}>Service Charge</Text><Text style={styles.invVal}>Rs. {selected.serviceCharge.toLocaleString()}</Text></View>
+            {selected.travelCharge > 0 && (
               <View style={styles.invRow}>
-                <Text style={styles.invLabel}>Visit Charge</Text>
-                <Text style={[styles.invVal, { color: Colors.secondary }]}>Rs. {selected.visitCharge.toLocaleString()}</Text>
+                <Text style={styles.invLabel}>Travelling Charge</Text>
+                <Text style={[styles.invVal, { color: Colors.secondary }]}>Rs. {selected.travelCharge.toLocaleString()}</Text>
+              </View>
+            )}
+            <View style={styles.invDivider} />
+            <View style={styles.invRow}><Text style={styles.invLabel}>Customer Total</Text><Text style={styles.invVal}>Rs. {customerTotal.toLocaleString()}</Text></View>
+            {selected.commissionAmount > 0 && (
+              <View style={styles.invRow}>
+                <Text style={[styles.invLabel, { color: Colors.textSecondary }]}>Platform Commission ({selected.commissionRate}%)</Text>
+                <Text style={[styles.invVal, { color: Colors.error }]}>- Rs. {selected.commissionAmount.toLocaleString()}</Text>
               </View>
             )}
             <View style={styles.invDivider} />
             <View style={styles.invRow}>
-              <Text style={styles.invTotalLabel}>Total Earned</Text>
-              <Text style={styles.invTotalVal}>Rs. {total.toLocaleString()}</Text>
+              <Text style={styles.invTotalLabel}>Your Earning</Text>
+              <Text style={styles.invTotalVal}>Rs. {selected.providerAmount.toLocaleString()}</Text>
             </View>
           </View>
-          {selected.visitCharge > 0 && (
+          {selected.travelCharge > 0 && (
             <View style={styles.noteCard}>
               <Icon name="info" size={13} color={Colors.primary} />
-              <Text style={styles.noteText}>A visit/call-out charge of Rs. {selected.visitCharge.toLocaleString()} was applied for this job.</Text>
+              <Text style={styles.noteText}>A travelling charge of Rs. {selected.travelCharge.toLocaleString()} was agreed for this job.</Text>
             </View>
           )}
         </ScrollView>
