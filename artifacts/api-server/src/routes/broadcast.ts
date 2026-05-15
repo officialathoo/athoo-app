@@ -97,9 +97,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
     const parsedLat = toNumber(latitude);
     const parsedLng = toNumber(longitude);
     const parsedOffer = toNumber(customerOffer);
-    const parsedCustRatePerHour = toNumber(customerRatePerHour);
-    const parsedCustHours = toNumber(customerHours);
-    const parsedCustTravelCharge = toNumber(customerTravelCharge);
+    // Accept both customerRatePerHour and ratePerHour as field names for flexibility
+    const parsedCustRatePerHour = toNumber(customerRatePerHour) ?? toNumber(req.body.ratePerHour);
+    const parsedCustHours = toNumber(customerHours) ?? toNumber(req.body.hours);
+    const parsedCustTravelCharge = toNumber(customerTravelCharge) ?? toNumber(req.body.travelCharge);
 
     // Require customer GPS coordinates server-side — frontend location gate is not sufficient
     if (parsedLat === null || parsedLng === null) {
@@ -637,7 +638,7 @@ router.post("/:id/select/:responseId", requireAuth, async (req: AuthRequest, res
     // Mark chosen response as accepted
     await db
       .update(broadcastResponsesTable)
-      .set({ status: "accepted_by_customer", updatedAt: new Date() })
+      .set({ status: "accepted", updatedAt: new Date() })
       .where(eq(broadcastResponsesTable.id, chosenResponse.id));
 
     // Mark all other pending responses as "not_selected" and notify those providers

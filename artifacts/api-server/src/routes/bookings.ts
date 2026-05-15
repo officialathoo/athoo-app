@@ -8,6 +8,7 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { getPlatformSettings } from "../lib/admin";
 import { emitToUser, emitToRole, type EventName } from "../lib/eventBus";
 import { notifyUser } from "../lib/notifications";
+import { generateInvoiceForBooking } from "./invoices";
 
 function broadcastBookingUpdate(
   booking: any,
@@ -862,6 +863,9 @@ router.post("/:id/verify-complete-pin", requireAuth, async (req: AuthRequest, re
       .set({ isAvailable: true, updatedAt: new Date() })
       .where(eq(usersTable.id, booking.providerId));
     const updated = await applyCompletionCommission(req.params.id as string);
+
+    // Auto-generate invoice for the completed booking
+    generateInvoiceForBooking(req.params.id as string).catch(() => undefined);
 
     if (updated) {
       broadcastBookingUpdate(updated, "booking:completed");

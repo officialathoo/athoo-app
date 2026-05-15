@@ -772,18 +772,26 @@ export const invoicesTable = pgTable("invoices", {
   address: text("address").notNull(),
   scheduledDate: text("scheduled_date").notNull(),
   scheduledTime: text("scheduled_time").notNull(),
+  ratePerHour: integer("rate_per_hour"),
+  hours: integer("hours"),
   subtotal: integer("subtotal").notNull(),
   visitCharge: integer("visit_charge").default(0),
   platformFee: integer("platform_fee").default(0),   // 5% from customer
   discountAmount: integer("discount_amount").default(0),
   totalAmount: integer("total_amount").notNull(),
+  commissionRate: integer("commission_rate"),
   commissionAmount: integer("commission_amount").default(0), // 10% from provider
   providerAmount: integer("provider_amount").notNull(),
   pdfUrl: text("pdf_url"),
   status: text("status").default("issued"), // issued | paid | disputed | cancelled
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  invoiceBookingIdx: index("invoices_booking_id_idx").on(t.bookingId),
+  invoiceCustomerIdx: index("invoices_customer_id_idx").on(t.customerId),
+  invoiceProviderIdx: index("invoices_provider_id_idx").on(t.providerId),
+  invoiceStatusIdx: index("invoices_status_idx").on(t.status),
+}));
 
 // ─── Report Issues ────────────────────────────────────────────────────────────
 export const reportIssuesTable = pgTable("report_issues", {

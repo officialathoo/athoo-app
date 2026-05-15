@@ -50,18 +50,34 @@ export async function applyNoShowPenalty(providerId: string): Promise<void> {
 async function sweepStuckAcceptedBookings(): Promise<number> {
   const cutoff = new Date(Date.now() - NO_SHOW_GRACE_MS);
 
-  // Use createdAt not updatedAt — providers can keep bumping updatedAt by
-  // regenerating the start PIN, which would indefinitely defer the sweep.
-  const stale = await db
+  // Only fetch accepted/confirmed bookings where provider hasn't arrived yet.
+  // We'll filter scheduled bookings below — don't auto-cancel a booking that's
+  // confirmed now for a scheduled time in the future.
+  const candidates = await db
     .select()
     .from(bookingsTable)
     .where(
       and(
         sql`${bookingsTable.status} IN ('accepted', 'confirmed')`,
         isNull(bookingsTable.providerArrivedAt),
-        lt(bookingsTable.createdAt, cutoff)
       )
     );
+
+  // For scheduled bookings, only sweep if the scheduled time + grace has passed.
+  // For instant bookings (no future scheduled time), use createdAt + grace.
+  const now = Date.now();
+  const stale = candidates.filter((booking) => {
+    if (booking.scheduledDate && booking.scheduledTime) {
+      const scheduledDT = new Date(
+        `${booking.scheduledDate}T${String(booking.scheduledTime).slice(0, 5)}`
+      );
+      if (!isNaN(scheduledDT.getTime()) && scheduledDT.getTime() > now) {
+        return false;
+      }
+      return scheduledDT.getTime() + NO_SHOW_GRACE_MS <= now;
+    }
+    return booking.createdAt != null && new Date(booking.createdAt).getTime() <= cutoff.getTime();
+  });
 
   if (stale.length === 0) return 0;
 

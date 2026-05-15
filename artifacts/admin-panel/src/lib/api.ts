@@ -22,7 +22,7 @@ export function getApiBase(): string {
     (import.meta as any)?.env?.VITE_API_BASE_URL
   );
 
-  // Use window.origin — Replit proxy routes /api to the API server
+  // Fall back to window.origin when no explicit base URL is configured
   const fallback = typeof window !== "undefined" ? window.location.origin : "";
 
   return saved || viteEnv || fallback;
