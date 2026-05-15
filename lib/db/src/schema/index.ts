@@ -333,7 +333,11 @@ export const chatsTable = pgTable("chats", {
   lastMessageAt: timestamp("last_message_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  chatsParticipant1Idx: index("chats_participant1_id_idx").on(t.participant1Id),
+  chatsParticipant2Idx: index("chats_participant2_id_idx").on(t.participant2Id),
+  chatsBookingIdx: index("chats_booking_id_idx").on(t.bookingId),
+}));
 
 export const messagesTable = pgTable("messages", {
   id: text("id").primaryKey(),
@@ -668,7 +672,11 @@ export const broadcastResponsesTable = pgTable("broadcast_responses", {
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  responseRequestIdx: index("broadcast_responses_request_id_idx").on(t.requestId),
+  responseProviderIdx: index("broadcast_responses_provider_id_idx").on(t.providerId),
+  responseStatusIdx: index("broadcast_responses_status_idx").on(t.status),
+}));
 
 export type BroadcastRequest = typeof broadcastRequestsTable.$inferSelect;
 export type BroadcastResponse = typeof broadcastResponsesTable.$inferSelect;
@@ -856,7 +864,10 @@ export const loginHistoryTable = pgTable("login_history", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => ({
+  loginHistoryUserIdx: index("login_history_user_id_idx").on(t.userId),
+  loginHistoryCreatedIdx: index("login_history_created_at_idx").on(t.createdAt),
+}));
 
 // ─── User Blocks ──────────────────────────────────────────────────────────────
 export const userBlocksTable = pgTable("user_blocks", {

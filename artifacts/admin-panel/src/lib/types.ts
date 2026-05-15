@@ -234,3 +234,83 @@ export interface AdminNotification {
   createdAt: string;
 }
 
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  bookingId: string;
+  customerId: string;
+  customerName: string;
+  customerPhone?: string | null;
+  providerId: string;
+  providerName: string;
+  providerPhone?: string | null;
+  service?: string | null;
+  ratePerHour?: number | null;
+  hours?: number | null;
+  subtotal: number;
+  visitCharge: number;
+  platformFee?: number | null;
+  discountAmount?: number | null;
+  totalAmount: number;
+  commissionRate?: number | null;
+  commissionAmount: number;
+  providerAmount: number;
+  pdfUrl?: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface SearchResults {
+  users: Array<{
+    id: string;
+    name: string;
+    phone: string;
+    email?: string | null;
+    role: string;
+    profileImage?: string | null;
+  }>;
+  bookings: Array<{
+    id: string;
+    publicId?: string | null;
+    service: string;
+    customerName: string;
+    providerName: string;
+    status: string;
+  }>;
+  invoices: Array<{
+    id: string;
+    invoiceNumber: string;
+    customerName: string;
+    providerName: string;
+    totalAmount: number;
+    status: string;
+  }>;
+}
+
+export interface UserActivity {
+  bookings: Booking[];
+  invoices: Invoice[];
+  notifications: Array<{
+    id: string;
+    title: string;
+    body?: string | null;
+    type: string;
+    isRead: boolean;
+    createdAt: string;
+  }>;
+  chats: Array<{
+    id: string;
+    participant1Id: string;
+    participant2Id: string;
+    createdAt: string;
+  }>;
+  loginHistory: Array<{
+    id: string;
+    userId: string;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    createdAt: string;
+  }>;
+}
+

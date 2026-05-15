@@ -7,6 +7,7 @@ import {
   LayoutGrid, Building2, Receipt, Inbox, RotateCcw, ArrowUpFromLine,
   Image, Bell, MapPin, HelpCircle, ChevronDown, ChevronRight,
   Briefcase, Zap, Globe, Flag, TrendingUp, Phone, History, Ban,
+  Search, Activity,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
@@ -43,6 +44,8 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/complaints", label: "Complaints", icon: MessageSquareWarning, perm: "support.write" },
       { to: "/reported-issues", label: "Reported Issues", icon: Flag, perm: "support.write" },
       { to: "/rate-requests", label: "Rate Requests", icon: TrendingUp, perm: "providers.write" },
+      { to: "/search", label: "Global Search", icon: Search, perm: "operations.read" },
+      { to: "/user-activity", label: "User Activity", icon: Activity, perm: "operations.read" },
     ],
   },
   {
@@ -55,6 +58,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/withdrawals", label: "Withdrawals", icon: ArrowUpFromLine, perm: "finance.write" },
       { to: "/refunds", label: "Refunds", icon: RotateCcw, perm: "finance.write" },
       { to: "/payment-accounts", label: "Payment Accounts", icon: Building2, perm: "finance.read" },
+      { to: "/invoices", label: "Invoices", icon: Receipt, perm: "finance.read" },
     ],
   },
   {

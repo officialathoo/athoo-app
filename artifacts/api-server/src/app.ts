@@ -149,6 +149,22 @@ app.use(
   }),
 );
 
+// General API rate limiter — 200 requests per minute per IP for all non-auth routes.
+app.use(
+  "/api",
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: Request) =>
+      req.path.startsWith("/api/health") ||
+      req.path.startsWith("/api/auth") ||
+      req.path.startsWith("/api/admin"),
+    message: { error: "Too many requests. Please slow down." },
+  }),
+);
+
 // Maintenance mode — cached for 60 s to avoid a DB round-trip on every request.
 // Admin routes (/api/admin/*) and health checks are always allowed through.
 let _maintenanceCache: { enabled: boolean; fetchedAt: number } = { enabled: false, fetchedAt: 0 };
