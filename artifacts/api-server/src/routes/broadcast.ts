@@ -29,6 +29,15 @@ function toNumber(v: unknown): number | null {
   return null;
 }
 
+function toDecimal(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 // Broadcast hard expiry: 3 minutes total
 const BROADCAST_TTL_MS = 3 * 60 * 1000;
 // After 1 minute with no acceptance, visibility expands to wider radius
@@ -94,12 +103,12 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const parsedLat = toNumber(latitude);
-    const parsedLng = toNumber(longitude);
+    const parsedLat = toDecimal(latitude);
+    const parsedLng = toDecimal(longitude);
     const parsedOffer = toNumber(customerOffer);
     // Accept both customerRatePerHour and ratePerHour as field names for flexibility
     const parsedCustRatePerHour = toNumber(customerRatePerHour) ?? toNumber(req.body.ratePerHour);
-    const parsedCustHours = toNumber(customerHours) ?? toNumber(req.body.hours);
+    const parsedCustHours = toDecimal(customerHours) ?? toDecimal(req.body.hours);
     const parsedCustTravelCharge = toNumber(customerTravelCharge) ?? toNumber(req.body.travelCharge);
 
     // Require customer GPS coordinates server-side — frontend location gate is not sufficient
@@ -442,13 +451,18 @@ router.post("/:id/respond", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
-    const { providerOffer, providerRatePerHour, providerHours, providerTravelCharge, message, acceptCustomerPrice } = req.body;
-    const parsedOffer = toNumber(providerOffer);
-    const parsedRatePerHour = toNumber(providerRatePerHour);
-    const parsedHours = toNumber(providerHours);
-    const parsedTravelCharge = toNumber(providerTravelCharge);
-    // If provider explicitly accepts customer's price (no counter)
-    const isDirectAccept = acceptCustomerPrice === true || (parsedOffer == null && parsedRatePerHour == null);
+    const body = req.body;
+    // Accept both prefixed (providerRatePerHour) and unprefixed (ratePerHour) field names
+    const parsedOffer = toNumber(body.providerOffer ?? body.offer);
+    const parsedRatePerHour = toNumber(body.providerRatePerHour ?? body.ratePerHour);
+    const parsedHours = toDecimal(body.providerHours ?? body.hours);
+    const parsedTravelCharge = toNumber(body.providerTravelCharge ?? body.travelCharge);
+    const message = body.message;
+    // If provider explicitly accepts customer's price (no counter).
+    // Respect explicit isDirectAccept=false from the client when counter terms are sent.
+    const isDirectAccept = body.acceptCustomerPrice === true
+      || body.isDirectAccept === true
+      || (body.isDirectAccept !== false && parsedOffer == null && parsedRatePerHour == null);
 
     const response = {
       id: generateId(),
