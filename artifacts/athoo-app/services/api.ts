@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-// Use the Replit-injected domain for API base — the shared proxy routes /api to the API server.
+// Use the environment domain for API base when available.
 const DEFAULT_LOCAL_API = process.env.EXPO_PUBLIC_DOMAIN
   ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
   : "";
@@ -997,6 +997,9 @@ export const api = {
     scheduledDate: string;
     scheduledTime: string;
     customerOffer?: number;
+    customerRatePerHour?: number;
+    customerHours?: number;
+    customerTravelCharge?: number;
   }) {
     return request<{ request: any }>("/api/broadcast", {
       method: "POST",
@@ -1020,7 +1023,7 @@ export const api = {
     });
   },
 
-  respondToBroadcast(requestId: string, payload: { providerOffer?: number; message?: string }) {
+  respondToBroadcast(requestId: string, payload: { providerOffer?: number; ratePerHour?: number; hours?: number; travelCharge?: number; isDirectAccept?: boolean; message?: string }) {
     return request<{ response: any }>(`/api/broadcast/${requestId}/respond`, {
       method: "POST",
       auth: true,

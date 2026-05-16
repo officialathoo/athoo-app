@@ -5,7 +5,7 @@
  * Falls back gracefully to Expo Location if Google returns no results.
  */
 
-const MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao";
+const MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 
 export interface PlaceSuggestion {
   placeId: string;
@@ -130,6 +130,92 @@ export async function reverseGeocodeGoogle(
   } catch {
     return null;
   }
+}
+
+// ─── Directions / Route ───────────────────────────────────────────────────────
+
+export interface DirectionsResult {
+  distanceKm: number;
+  durationMin: number;
+  polyline: string; // encoded polyline for MapView rendering
+  summary: string;
+}
+
+/**
+ * Get real road directions between two points via Google Directions API.
+ * Returns distance, ETA, and an encoded polyline for map rendering.
+ */
+export async function getDirections(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+): Promise<DirectionsResult | null> {
+  if (!MAPS_API_KEY) return null;
+  try {
+    const url =
+      `https://maps.googleapis.com/maps/api/directions/json` +
+      `?origin=${originLat},${originLng}` +
+      `&destination=${destLat},${destLng}` +
+      `&key=${MAPS_API_KEY}` +
+      `&mode=driving` +
+      `&language=en` +
+      `&region=pk`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.status !== "OK" || !data.routes?.length) return null;
+
+    const route = data.routes[0];
+    const leg = route.legs[0];
+
+    return {
+      distanceKm: Math.round((leg.distance.value / 1000) * 10) / 10,
+      durationMin: Math.ceil(leg.duration.value / 60),
+      polyline: route.overview_polyline?.points || "",
+      summary: route.summary || "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decode a Google Maps encoded polyline into an array of {latitude, longitude}
+ * coordinates for rendering on react-native-maps.
+ */
+export function decodePolyline(
+  encoded: string,
+): { latitude: number; longitude: number }[] {
+  const points: { latitude: number; longitude: number }[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+
+    shift = 0;
+    result = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+
+    points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+  return points;
 }
 
 // ─── Static Map URL ───────────────────────────────────────────────────────────

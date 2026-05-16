@@ -7,6 +7,7 @@ import { eq, or, and, ne, sql } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "../middlewares/auth";
 import { Response } from "express";
 import { emitToUser } from "../lib/eventBus";
+import { notifyUser } from "../lib/notifications";
 
 const router = Router();
 
@@ -138,6 +139,15 @@ router.post("/:chatId/messages", requireAuth, async (req: AuthRequest, res: Resp
         chat.participant1Id === userId ? chat.participant2Id : chat.participant1Id;
       if (recipientId) {
         emitToUser(recipientId, "chat:message", { message: msg, chatId: chat.id });
+        // Send push notification so recipient gets alerted even when app is closed
+        notifyUser({
+          userId: recipientId,
+          title: senderName || "New message",
+          body: text ? (text.length > 100 ? text.slice(0, 100) + "..." : text) : "Sent you a message",
+          type: "info",
+          link: `/chat/${chat.id}`,
+          data: { chatId: chat.id },
+        }).catch(() => undefined);
       }
     }
 

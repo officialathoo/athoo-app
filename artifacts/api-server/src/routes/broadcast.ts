@@ -29,6 +29,15 @@ function toNumber(v: unknown): number | null {
   return null;
 }
 
+function toDecimal(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 // Broadcast hard expiry: 3 minutes total
 const BROADCAST_TTL_MS = 3 * 60 * 1000;
 // After 1 minute with no acceptance, visibility expands to wider radius
@@ -82,6 +91,9 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       scheduledDate,
       scheduledTime,
       customerOffer,
+      customerRatePerHour,
+      customerHours,
+      customerTravelCharge,
     } = req.body;
 
     if (!service || !serviceLabel || !address || !scheduledDate || !scheduledTime) {
@@ -91,9 +103,13 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const parsedLat = toNumber(latitude);
-    const parsedLng = toNumber(longitude);
+    const parsedLat = toDecimal(latitude);
+    const parsedLng = toDecimal(longitude);
     const parsedOffer = toNumber(customerOffer);
+    // Accept both customerRatePerHour and ratePerHour as field names for flexibility
+    const parsedCustRatePerHour = toNumber(customerRatePerHour) ?? toNumber(req.body.ratePerHour);
+    const parsedCustHours = toDecimal(customerHours) ?? toDecimal(req.body.hours);
+    const parsedCustTravelCharge = toNumber(customerTravelCharge) ?? toNumber(req.body.travelCharge);
 
     // Require customer GPS coordinates server-side — frontend location gate is not sufficient
     if (parsedLat === null || parsedLng === null) {
@@ -116,6 +132,9 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
       scheduledDate: String(scheduledDate),
       scheduledTime: String(scheduledTime),
       customerOffer: parsedOffer,
+      customerRatePerHour: parsedCustRatePerHour,
+      customerHours: parsedCustHours,
+      customerTravelCharge: parsedCustTravelCharge,
       status: "open",
       acceptedResponseId: null,
       bookingId: null,
@@ -432,8 +451,18 @@ router.post("/:id/respond", requireAuth, async (req: AuthRequest, res: Response)
       return;
     }
 
-    const { providerOffer, message } = req.body;
-    const parsedOffer = toNumber(providerOffer);
+    const body = req.body;
+    // Accept both prefixed (providerRatePerHour) and unprefixed (ratePerHour) field names
+    const parsedOffer = toNumber(body.providerOffer ?? body.offer);
+    const parsedRatePerHour = toNumber(body.providerRatePerHour ?? body.ratePerHour);
+    const parsedHours = toDecimal(body.providerHours ?? body.hours);
+    const parsedTravelCharge = toNumber(body.providerTravelCharge ?? body.travelCharge);
+    const message = body.message;
+    // If provider explicitly accepts customer's price (no counter).
+    // Respect explicit isDirectAccept=false from the client when counter terms are sent.
+    const isDirectAccept = body.acceptCustomerPrice === true
+      || body.isDirectAccept === true
+      || (body.isDirectAccept !== false && parsedOffer == null && parsedRatePerHour == null);
 
     const response = {
       id: generateId(),
@@ -441,6 +470,10 @@ router.post("/:id/respond", requireAuth, async (req: AuthRequest, res: Response)
       providerId: userId,
       providerName: provider.name,
       providerOffer: parsedOffer,
+      providerRatePerHour: parsedRatePerHour,
+      providerHours: parsedHours,
+      providerTravelCharge: parsedTravelCharge,
+      isDirectAccept,
       message: message || null,
       status: "pending",
     };
@@ -540,10 +573,31 @@ router.post("/:id/select/:responseId", requireAuth, async (req: AuthRequest, res
       return;
     }
 
-    const agreedPrice = chosenResponse.providerOffer ?? request.customerOffer;
-    const { defaultVisitCharge } = await getPlatformSettings();
+    // Determine final agreed terms based on provider's response:
+    // If provider directly accepted customer's price (isDirectAccept or no providerOffer),
+    //   use customer's terms → booking confirmed immediately (no extra accept needed)
+    // If provider sent a counter offer (providerOffer set),
+    //   customer is selecting/accepting that offer → booking confirmed immediately
+    //   (provider already proposed these terms, no need for provider to accept again)
+    const isDirectAccept = chosenResponse.isDirectAccept || chosenResponse.providerOffer == null;
 
-    // Create the booking
+    // Final pricing: use provider's counter terms if they exist, otherwise customer's original terms
+    const finalRatePerHour = chosenResponse.providerRatePerHour ?? request.customerRatePerHour ?? null;
+    const finalHours = chosenResponse.providerHours ?? request.customerHours ?? null;
+    const finalTravelCharge = chosenResponse.providerTravelCharge ?? request.customerTravelCharge ?? null;
+    const agreedPrice = chosenResponse.providerOffer ?? request.customerOffer;
+
+    // Compute total from detailed fields if available, otherwise use flat price
+    const serviceCharge = (finalRatePerHour && finalHours)
+      ? Math.round(finalRatePerHour * finalHours)
+      : (agreedPrice || 0);
+    const travelChargeVal = finalTravelCharge ?? 0;
+    const totalPrice = serviceCharge + travelChargeVal;
+
+    // CONFIRMED directly — both parties have agreed:
+    // - If provider accepted customer's price → customer's terms accepted, confirmed
+    // - If customer selects provider's counter → provider's terms accepted, confirmed
+    // No extra acceptance step needed from either side.
     const booking = {
       id: generateId(),
       customerId: userId,
@@ -559,12 +613,18 @@ router.post("/:id/select/:responseId", requireAuth, async (req: AuthRequest, res
       address: request.address,
       scheduledDate: request.scheduledDate,
       scheduledTime: request.scheduledTime,
-      status: "pending",
-      price: agreedPrice,
+      status: "confirmed",
+      price: totalPrice,
+      ratePerHour: finalRatePerHour,
+      hours: finalHours,
+      travelCharge: travelChargeVal,
+      source: "broadcast",
+      broadcastRequestId: request.id,
+      broadcastResponseId: chosenResponse.id,
       commissionAmount: 0,
-      providerAmount: agreedPrice,
+      providerAmount: totalPrice,
       commissionRate: 0,
-      visitCharge: defaultVisitCharge,
+      visitCharge: travelChargeVal,
       pickedLat: request.latitude,
       pickedLng: request.longitude,
       customerLat: request.latitude,
@@ -589,16 +649,16 @@ router.post("/:id/select/:responseId", requireAuth, async (req: AuthRequest, res
       })
       .where(eq(broadcastRequestsTable.id, request.id));
 
-    // Mark chosen response
+    // Mark chosen response as accepted
     await db
       .update(broadcastResponsesTable)
-      .set({ status: "accepted_by_customer", updatedAt: new Date() })
+      .set({ status: "accepted", updatedAt: new Date() })
       .where(eq(broadcastResponsesTable.id, chosenResponse.id));
 
-    // Reject all other pending responses
-    await db
-      .update(broadcastResponsesTable)
-      .set({ status: "rejected_by_customer", updatedAt: new Date() })
+    // Mark all other pending responses as "not_selected" and notify those providers
+    const otherResponses = await db
+      .select()
+      .from(broadcastResponsesTable)
       .where(
         and(
           eq(broadcastResponsesTable.requestId, request.id),
@@ -607,12 +667,41 @@ router.post("/:id/select/:responseId", requireAuth, async (req: AuthRequest, res
         )
       );
 
-    // Notify chosen provider
+    if (otherResponses.length > 0) {
+      await db
+        .update(broadcastResponsesTable)
+        .set({ status: "not_selected", updatedAt: new Date() })
+        .where(
+          and(
+            eq(broadcastResponsesTable.requestId, request.id),
+            ne(broadcastResponsesTable.id, chosenResponse.id),
+            eq(broadcastResponsesTable.status, "pending")
+          )
+        );
+
+      // Notify each rejected provider that the job was assigned to someone else
+      for (const resp of otherResponses) {
+        emitToUser(resp.providerId, "broadcast:not_selected" as EventName, {
+          requestId: request.id,
+          responseId: resp.id,
+        });
+        notifyUser({
+          userId: resp.providerId,
+          title: "Job assigned to another provider",
+          body: `The ${request.serviceLabel} job has been assigned to another provider.`,
+          type: "broadcast",
+          link: `/broadcast/${request.id}`,
+          data: { broadcastRequestId: request.id },
+        }).catch(() => undefined);
+      }
+    }
+
+    // Notify chosen provider — booking is CONFIRMED, no extra accept needed
     emitToUser(provider.id, "booking:new" as EventName, { booking });
     notifyUser({
       userId: provider.id,
-      title: "Job confirmed!",
-      body: `${customer.name} selected you for ${request.serviceLabel}`,
+      title: "Booking confirmed!",
+      body: `${customer.name} confirmed you for ${request.serviceLabel} — Rs. ${totalPrice}`,
       type: "booking",
       link: `/jobs/${booking.id}`,
       data: { bookingId: booking.id },

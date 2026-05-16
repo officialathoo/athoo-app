@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { RequestUploadUrlBody } from "@workspace/api-zod";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { verifyToken } from "../middlewares/auth";
+import { validateFileType, validateFileSize } from "../lib/sanitize";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -44,6 +45,17 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
 
   try {
     const { name, size, contentType } = parsed.data;
+
+    if (contentType && !validateFileType(contentType)) {
+      res.status(400).json({ error: "File type not allowed. Supported: images, videos, PDF, DOC" });
+      return;
+    }
+
+    if (size && !validateFileSize(size, 25)) {
+      res.status(400).json({ error: "File size exceeds 25MB limit" });
+      return;
+    }
+
     const params = objectStorageService.getSignedUploadParams("athoo/uploads");
 
     res.json({

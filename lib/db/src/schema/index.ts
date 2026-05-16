@@ -254,6 +254,15 @@ export const bookingsTable = pgTable("bookings", {
   scheduledTime: text("scheduled_time").notNull(),
   status: text("status").notNull().default("pending"),
   price: integer("price"),
+  // Negotiation pricing fields — final agreed terms used for invoicing
+  ratePerHour: integer("rate_per_hour"),
+  hours: real("hours"),
+  travelCharge: integer("travel_charge"),
+  // Source of booking — direct, broadcast, or negotiation
+  source: text("source").default("direct"),
+  // Reference IDs for tracing back to the original broadcast/negotiation
+  broadcastRequestId: text("broadcast_request_id"),
+  broadcastResponseId: text("broadcast_response_id"),
   commissionAmount: integer("commission_amount").default(0),
   providerAmount: integer("provider_amount").default(0),
   commissionRate: integer("commission_rate").default(0),
@@ -324,7 +333,11 @@ export const chatsTable = pgTable("chats", {
   lastMessageAt: timestamp("last_message_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  chatsParticipant1Idx: index("chats_participant1_id_idx").on(t.participant1Id),
+  chatsParticipant2Idx: index("chats_participant2_id_idx").on(t.participant2Id),
+  chatsBookingIdx: index("chats_booking_id_idx").on(t.bookingId),
+}));
 
 export const messagesTable = pgTable("messages", {
   id: text("id").primaryKey(),
@@ -621,6 +634,10 @@ export const broadcastRequestsTable = pgTable("broadcast_requests", {
   scheduledTime: text("scheduled_time").notNull(),
   // Customer's opening offer; null = "name your price"
   customerOffer: integer("customer_offer"),
+  // Detailed pricing from customer
+  customerRatePerHour: integer("customer_rate_per_hour"),
+  customerHours: real("customer_hours"),
+  customerTravelCharge: integer("customer_travel_charge"),
   // open | accepted | cancelled | expired
   status: text("status").notNull().default("open"),
   // Which broadcastResponsesTable.id the customer chose
@@ -644,12 +661,22 @@ export const broadcastResponsesTable = pgTable("broadcast_responses", {
   providerName: text("provider_name").notNull(),
   // null = provider accepts customer's offered price; set = provider counter
   providerOffer: integer("provider_offer"),
+  // Detailed pricing from provider
+  providerRatePerHour: integer("provider_rate_per_hour"),
+  providerHours: real("provider_hours"),
+  providerTravelCharge: integer("provider_travel_charge"),
+  // Whether provider accepted customer's price directly (no counter)
+  isDirectAccept: boolean("is_direct_accept").default(false),
   message: text("message"),
-  // pending | accepted_by_customer | rejected_by_customer | withdrawn
+  // pending | accepted_by_customer | rejected_by_customer | withdrawn | not_selected
   status: text("status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  responseRequestIdx: index("broadcast_responses_request_id_idx").on(t.requestId),
+  responseProviderIdx: index("broadcast_responses_provider_id_idx").on(t.providerId),
+  responseStatusIdx: index("broadcast_responses_status_idx").on(t.status),
+}));
 
 export type BroadcastRequest = typeof broadcastRequestsTable.$inferSelect;
 export type BroadcastResponse = typeof broadcastResponsesTable.$inferSelect;
@@ -753,18 +780,26 @@ export const invoicesTable = pgTable("invoices", {
   address: text("address").notNull(),
   scheduledDate: text("scheduled_date").notNull(),
   scheduledTime: text("scheduled_time").notNull(),
+  ratePerHour: integer("rate_per_hour"),
+  hours: integer("hours"),
   subtotal: integer("subtotal").notNull(),
   visitCharge: integer("visit_charge").default(0),
   platformFee: integer("platform_fee").default(0),   // 5% from customer
   discountAmount: integer("discount_amount").default(0),
   totalAmount: integer("total_amount").notNull(),
+  commissionRate: integer("commission_rate"),
   commissionAmount: integer("commission_amount").default(0), // 10% from provider
   providerAmount: integer("provider_amount").notNull(),
   pdfUrl: text("pdf_url"),
   status: text("status").default("issued"), // issued | paid | disputed | cancelled
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  invoiceBookingIdx: index("invoices_booking_id_idx").on(t.bookingId),
+  invoiceCustomerIdx: index("invoices_customer_id_idx").on(t.customerId),
+  invoiceProviderIdx: index("invoices_provider_id_idx").on(t.providerId),
+  invoiceStatusIdx: index("invoices_status_idx").on(t.status),
+}));
 
 // ─── Report Issues ────────────────────────────────────────────────────────────
 export const reportIssuesTable = pgTable("report_issues", {
@@ -829,7 +864,10 @@ export const loginHistoryTable = pgTable("login_history", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => ({
+  loginHistoryUserIdx: index("login_history_user_id_idx").on(t.userId),
+  loginHistoryCreatedIdx: index("login_history_created_at_idx").on(t.createdAt),
+}));
 
 // ─── User Blocks ──────────────────────────────────────────────────────────────
 export const userBlocksTable = pgTable("user_blocks", {

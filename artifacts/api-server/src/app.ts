@@ -27,19 +27,13 @@ app.use(
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 const corsOrigin = process.env.CORS_ORIGIN?.trim();
-const replitDomains = (process.env.REPLIT_DOMAINS || "")
-  .split(",")
-  .map((d) => `https://${d.trim()}`)
-  .filter(Boolean);
 
 app.use(
   cors({
     origin:
       corsOrigin && corsOrigin !== "*"
         ? corsOrigin.split(",").map((item) => item.trim()).filter(Boolean)
-        : process.env.NODE_ENV === "production" && replitDomains.length > 0
-          ? replitDomains
-          : true,
+        : true,
     credentials: true,
   }),
 );
@@ -152,6 +146,22 @@ app.use(
       ),
     ),
     message: { error: "Too many registration attempts. Please try again in 15 minutes." },
+  }),
+);
+
+// General API rate limiter — 200 requests per minute per IP for all non-auth routes.
+app.use(
+  "/api",
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: Request) =>
+      req.path.startsWith("/api/health") ||
+      req.path.startsWith("/api/auth") ||
+      req.path.startsWith("/api/admin"),
+    message: { error: "Too many requests. Please slow down." },
   }),
 );
 

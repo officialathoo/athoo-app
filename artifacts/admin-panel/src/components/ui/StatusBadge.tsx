@@ -4,10 +4,15 @@ interface StatusBadgeProps {
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800 border-amber-200",
+  confirmed: "bg-blue-100 text-blue-800 border-blue-200",
   accepted: "bg-blue-100 text-blue-800 border-blue-200",
+  provider_travelling: "bg-indigo-100 text-indigo-800 border-indigo-200",
+  provider_arrived: "bg-cyan-100 text-cyan-800 border-cyan-200",
   in_progress: "bg-purple-100 text-purple-800 border-purple-200",
   completed: "bg-green-100 text-green-800 border-green-200",
   cancelled: "bg-red-100 text-red-800 border-red-200",
+  expired: "bg-slate-100 text-slate-600 border-slate-200",
+  not_selected: "bg-slate-100 text-slate-600 border-slate-200",
   active: "bg-green-100 text-green-800 border-green-200",
   blocked: "bg-red-100 text-red-800 border-red-200",
   verified: "bg-emerald-100 text-emerald-800 border-emerald-200",

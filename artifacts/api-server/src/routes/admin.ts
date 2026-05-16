@@ -22,8 +22,10 @@ import {
   withdrawalRequestsTable,
   refundRequestsTable,
   hourlyRateRequestsTable,
+  chatsTable,
+  invoicesTable,
 } from "@workspace/db/schema";
-import { and, between, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, between, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import {
   requireAdmin,
   requireAuth,
@@ -378,7 +380,7 @@ router.post("/providers/:id/commission-payment", async (req: AuthRequest, res) =
 
 router.get("/bookings", async (req, res) => {
   try {
-    const status =
+    const statusParam =
       typeof req.query.status === "string" && req.query.status.trim()
         ? req.query.status.trim()
         : undefined;
@@ -387,10 +389,18 @@ router.get("/bookings", async (req, res) => {
     const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
     const offset = (page - 1) * limit;
 
+    let statusFilter;
+    if (statusParam) {
+      const statuses = statusParam.split(",").map(s => s.trim()).filter(Boolean);
+      statusFilter = statuses.length === 1
+        ? eq(bookingsTable.status, statuses[0])
+        : inArray(bookingsTable.status, statuses);
+    }
+
     const bookings = await db
       .select()
       .from(bookingsTable)
-      .where(status ? eq(bookingsTable.status, status) : undefined)
+      .where(statusFilter)
       .orderBy(desc(bookingsTable.createdAt))
       .limit(limit)
       .offset(offset);
@@ -1574,6 +1584,180 @@ router.delete("/blacklist/:id", requireSuperAdmin, async (req: AuthRequest, res)
   } catch (e) {
     logger.error({ err: e }, "blacklist delete error");
     return res.status(500).json({ error: "Failed to remove blacklist entry" });
+  }
+});
+
+// ─── Admin Invoices ───────────────────────────────────────────────────────────
+
+router.get("/invoices", async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const offset = (page - 1) * limit;
+
+    const statusParam = typeof req.query.status === "string" && req.query.status.trim()
+      ? req.query.status.trim()
+      : undefined;
+
+    let whereCondition;
+    if (statusParam) {
+      whereCondition = eq(invoicesTable.status, statusParam);
+    }
+
+    const invoices = await db
+      .select()
+      .from(invoicesTable)
+      .where(whereCondition)
+      .orderBy(desc(invoicesTable.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return res.json({ invoices, page, limit });
+  } catch (e) {
+    logger.error({ err: e }, "admin invoices error");
+    return res.status(500).json({ error: "Failed to load invoices" });
+  }
+});
+
+router.get("/invoices/:id", async (req, res) => {
+  try {
+    const invoice = await db.query.invoicesTable.findFirst({
+      where: eq(invoicesTable.id, req.params.id),
+    });
+    if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+    return res.json({ invoice });
+  } catch (e) {
+    logger.error({ err: e }, "admin invoice detail error");
+    return res.status(500).json({ error: "Failed to load invoice" });
+  }
+});
+
+// ─── Admin Global Search ──────────────────────────────────────────────────────
+router.get("/search", async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (!q || q.length < 2) {
+      return res.json({ users: [], bookings: [], invoices: [] });
+    }
+
+    const pattern = `%${q}%`;
+
+    const [users, bookings, invoices] = await Promise.all([
+      db
+        .select({
+          id: usersTable.id,
+          name: usersTable.name,
+          phone: usersTable.phone,
+          email: usersTable.email,
+          role: usersTable.role,
+          profileImage: usersTable.profileImage,
+        })
+        .from(usersTable)
+        .where(
+          or(
+            ilike(usersTable.name, pattern),
+            ilike(usersTable.phone, pattern),
+            ilike(usersTable.email, pattern),
+            eq(usersTable.id, q),
+          )
+        )
+        .limit(10),
+      db
+        .select({
+          id: bookingsTable.id,
+          publicId: bookingsTable.publicId,
+          service: bookingsTable.service,
+          customerName: bookingsTable.customerName,
+          providerName: bookingsTable.providerName,
+          status: bookingsTable.status,
+        })
+        .from(bookingsTable)
+        .where(
+          or(
+            ilike(bookingsTable.publicId, pattern),
+            ilike(bookingsTable.customerName, pattern),
+            ilike(bookingsTable.providerName, pattern),
+            ilike(bookingsTable.service, pattern),
+            eq(bookingsTable.id, q),
+          )
+        )
+        .limit(10),
+      db
+        .select({
+          id: invoicesTable.id,
+          invoiceNumber: invoicesTable.invoiceNumber,
+          customerName: invoicesTable.customerName,
+          providerName: invoicesTable.providerName,
+          totalAmount: invoicesTable.totalAmount,
+          status: invoicesTable.status,
+        })
+        .from(invoicesTable)
+        .where(
+          or(
+            ilike(invoicesTable.invoiceNumber, pattern),
+            ilike(invoicesTable.customerName, pattern),
+            ilike(invoicesTable.providerName, pattern),
+            eq(invoicesTable.id, q),
+          )
+        )
+        .limit(10),
+    ]);
+
+    return res.json({ users, bookings, invoices });
+  } catch (e) {
+    logger.error({ err: e }, "admin search error");
+    return res.status(500).json({ error: "Search failed" });
+  }
+});
+
+// ─── Admin User Activity History ──────────────────────────────────────────────
+router.get("/users/:id/activity", async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const [userBookings, userInvoices, userNotifications, userChats, userLoginHistory] = await Promise.all([
+      db
+        .select()
+        .from(bookingsTable)
+        .where(or(eq(bookingsTable.customerId, userId), eq(bookingsTable.providerId, userId)))
+        .orderBy(desc(bookingsTable.createdAt))
+        .limit(50),
+      db
+        .select()
+        .from(invoicesTable)
+        .where(or(eq(invoicesTable.customerId, userId), eq(invoicesTable.providerId, userId)))
+        .orderBy(desc(invoicesTable.createdAt))
+        .limit(50),
+      db
+        .select()
+        .from(notificationsTable)
+        .where(eq(notificationsTable.userId, userId))
+        .orderBy(desc(notificationsTable.createdAt))
+        .limit(50),
+      db
+        .select()
+        .from(chatsTable)
+        .where(or(eq(chatsTable.participant1Id, userId), eq(chatsTable.participant2Id, userId)))
+        .orderBy(desc(chatsTable.createdAt))
+        .limit(20),
+      db
+        .select()
+        .from(loginHistoryTable)
+        .where(eq(loginHistoryTable.userId, userId))
+        .orderBy(desc(loginHistoryTable.createdAt))
+        .limit(50),
+    ]);
+
+    return res.json({
+      bookings: userBookings,
+      invoices: userInvoices,
+      notifications: userNotifications,
+      chats: userChats,
+      loginHistory: userLoginHistory,
+    });
+  } catch (e) {
+    logger.error({ err: e }, "admin user activity error");
+    return res.status(500).json({ error: "Failed to load user activity" });
   }
 });
 

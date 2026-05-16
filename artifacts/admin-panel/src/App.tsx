@@ -34,6 +34,9 @@ import { EmergencyContactsPage } from "@/pages/EmergencyContactsPage";
 import { NotificationTemplatesPage } from "@/pages/NotificationTemplatesPage";
 import { LoginHistoryPage } from "@/pages/LoginHistoryPage";
 import { BlacklistPage } from "@/pages/BlacklistPage";
+import { InvoicesPage } from "@/pages/InvoicesPage";
+import { SearchPage } from "@/pages/SearchPage";
+import { UserActivityPage } from "@/pages/UserActivityPage";
 import { useAdmin } from "@/hooks/useAdmin";
 import { Loader2, Lock } from "lucide-react";
 
@@ -161,6 +164,15 @@ function AppShell() {
             <Route path="/notification-templates" component={NotificationTemplatesPage} />
             <Route path="/login-history">
               <Guard perm="audit.read"><LoginHistoryPage /></Guard>
+            </Route>
+            <Route path="/invoices">
+              <Guard perm="finance.read"><InvoicesPage /></Guard>
+            </Route>
+            <Route path="/search">
+              <Guard perm="operations.read"><SearchPage /></Guard>
+            </Route>
+            <Route path="/user-activity">
+              <Guard perm="operations.read"><UserActivityPage /></Guard>
             </Route>
           </Switch>
         </main>
